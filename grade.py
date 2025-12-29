@@ -104,15 +104,15 @@ def grade_student(student_path):
     else:
         details.append("[X] Package declaration missing/incorrect")
 
-    # Private fields (Player)
-    # Check for private fields. We expect at least 3 private fields.
-    # Regex updated to handle inline initialization: private Type name = val;
-    private_count = len(re.findall(r'private\s+\w+\s+\w+(?:\s*=\s*[^;]+)?;', player_content))
-    if private_count >= 3:
-        s_score += 5
-        details.append(f"[OK] Encapsulation (Private fields) in Player ({private_count} found) (+5)")
-    else:
-        details.append(f"[X] Encapsulation issues in Player (found {private_count} private fields)")
+    # Private/protected fields (Player)
+    # Accept both private and protected for encapsulation
+        # Numeric fields (Player) - lenient: any int/long/double/float field
+        numeric_count = len(re.findall(r'(int|long|double|float)\s+\w+(?:\s*=\s*[^;]+)?;', player_content))
+        if numeric_count >= 3:
+            s_score += 5
+            details.append(f"[OK] Numeric fields in Player ({numeric_count} found) (+5)")
+        else:
+            details.append(f"[X] Numeric fields in Player (found {numeric_count})")
 
     # UML Types (UUID, LocalDateTime)
     if "UUID" in player_content and "LocalDateTime" in player_content:
@@ -126,94 +126,132 @@ def grade_student(student_path):
     # 2. Implementasi Interface (15%)
     i_score = 0
     # ShowDetail interface
-    # Allow public void showDetail(); or void showDetail();
-    if "interface ShowDetail" in showdetail_content and re.search(r'(public\s+)?void\s+showDetail\(\)\s*;', showdetail_content):
-        i_score += 5
-        details.append("[OK] Interface ShowDetail defined correctly (+5)")
+    if "interface ShowDetail" in showdetail_content:
+        if re.search(r'(public\s+)?void\s+showDetail\(\)\s*;', showdetail_content):
+            i_score += 5
+            details.append("[OK] Interface ShowDetail defined correctly (+5)")
+        else:
+            i_score += 2
+            details.append("[~] Interface ShowDetail ada, tapi method showDetail() belum sesuai. (+2)")
     else:
-        details.append("[X] Interface ShowDetail missing or incorrect")
+        details.append("[~] Interface ShowDetail belum ditemukan. Coba pastikan nama dan deklarasi sudah benar.")
 
-    # Implements
-    if "implements ShowDetail" in player_content:
+    # Implements (partial credit)
+    if re.search(r'implements\s+ShowDetail', player_content, re.IGNORECASE):
         i_score += 5
-        details.append("[OK] Player implements ShowDetail (+5)")
+        details.append("[OK] Player sudah mengimplementasikan ShowDetail. Bagus! (+5)")
+    elif re.search(r'implements', player_content, re.IGNORECASE):
+        i_score += 2
+        details.append("[~] Player mengimplementasikan interface lain, pastikan ShowDetail juga diimplementasikan. (+2)")
     else:
-        details.append("[X] Player does not implement ShowDetail")
+        details.append("[~] Player belum mengimplementasikan ShowDetail. Coba pastikan deklarasi: 'implements ShowDetail'.")
 
-    if "implements ShowDetail" in score_content:
+    if re.search(r'implements\s+ShowDetail', score_content, re.IGNORECASE):
         i_score += 5
-        details.append("[OK] Score implements ShowDetail (+5)")
+        details.append("[OK] Score sudah mengimplementasikan ShowDetail. (+5)")
+    elif re.search(r'implements', score_content, re.IGNORECASE):
+        i_score += 2
+        details.append("[~] Score mengimplementasikan interface lain, pastikan ShowDetail juga diimplementasikan. (+2)")
     else:
-        details.append("[X] Score does not implement ShowDetail")
+        details.append("[~] Score belum mengimplementasikan ShowDetail. Pastikan deklarasi sudah benar.")
 
     total_score += (i_score / 15) * W_INTERFACE
 
     # 3. Logika Constructor (20%)
     c_score = 0
     # Player: UUID.randomUUID()
-    if "UUID.randomUUID()" in player_content:
+    if re.search(r'UUID\s*\.\s*randomUUID\s*\(', player_content):
         c_score += 5
-        details.append("[OK] Player: UUID.randomUUID() used (+5)")
-    elif "UUID.fromString" in player_content:
-        c_score += 2 # Partial credit for trying
-        details.append("[~] Player: UUID.fromString used instead of randomUUID (+2)")
+        details.append("[OK] Player: UUID.randomUUID() sudah digunakan untuk ID. (+5)")
+    elif re.search(r'UUID', player_content):
+        c_score += 2
+        details.append("[~] Player: UUID sudah digunakan, tapi belum randomUUID(). (+2)")
     else:
-        details.append("[X] Player: UUID generation missing")
+        details.append("[~] Player: UUID generation belum ditemukan. Coba gunakan UUID.randomUUID() untuk membuat ID unik.")
 
     # Player: LocalDateTime.now()
-    if "LocalDateTime.now()" in player_content:
+    if re.search(r'LocalDateTime\s*\.\s*now\s*\(', player_content):
         c_score += 5
-        details.append("[OK] Player: LocalDateTime.now() used (+5)")
+        details.append("[OK] Player: LocalDateTime.now() sudah digunakan untuk createdAt. (+5)")
+    elif re.search(r'LocalDateTime', player_content):
+        c_score += 2
+        details.append("[~] Player: LocalDateTime sudah digunakan, tapi belum .now(). (+2)")
     else:
-        details.append("[X] Player: LocalDateTime.now() missing")
+        details.append("[~] Player: LocalDateTime.now() belum ditemukan. Pastikan createdAt diisi dengan waktu saat pembuatan objek.")
 
     # Player: Init 0
     # Allow explicit init to 0 OR just reliance on default values (it's Java)
     # We check if there are numeric fields defined.
-    if re.search(r'private\s+(int|long|double|float)\s+\w+(\s*=\s*0)?\s*;', player_content):
+    if re.search(r'(private|protected)\s+(int|long|double|float)\s+\w+(\s*=\s*0)?\s*;', player_content):
         c_score += 5
-        details.append("[OK] Player: Numeric fields present (default 0 or explicit) (+5)")
+        details.append("[OK] Player: Field numerik sudah ada dan diinisialisasi (default 0 atau eksplisit). (+5)")
+    elif re.search(r'(int|long|double|float)\s+\w+', player_content):
+        c_score += 2
+        details.append("[~] Player: Field numerik ada, tapi belum diinisialisasi 0 atau belum private/protected. (+2)")
     else:
-        details.append("[X] Player: Numeric fields missing")
+        details.append("[~] Player: Field numerik belum ditemukan atau belum diinisialisasi. Pastikan ada highScore, totalCoins, totalDistance.")
 
     # Score: Constructor assignments
     # Look for 'this.x = x' OR 'x = val' inside constructor
-    if len(re.findall(r'(this\.)?\w+\s*=\s*\w+;', score_content)) >= 3:
+    assign_count = len(re.findall(r'(this\.)?\w+\s*=\s*\w+;', score_content))
+    if assign_count >= 3:
         c_score += 5
         details.append("[OK] Score: Constructor assignments found (+5)")
+    elif assign_count > 0:
+        c_score += 2
+        details.append(f"[~] Score: Constructor assignment ditemukan {assign_count} kali, sebaiknya minimal 3. (+2)")
     else:
-        details.append("[X] Score: Constructor assignments missing/insufficient")
+        details.append("[~] Score: Constructor assignments belum ditemukan.")
 
     total_score += (c_score / 20) * W_CONSTRUCTOR
+    # Bonus effort jika sudah mengerjakan mayoritas bagian (>=60% instruksi)
+    instruksi_terpenuhi = 0
+    if i_score > 7: instruksi_terpenuhi += 1
+    if c_score > 7: instruksi_terpenuhi += 1
+    if s_score > 10: instruksi_terpenuhi += 1
+    # Method (lihat addCoins, addDistance, updateHighScore, showDetail)
+    method_count = 0
+    if re.search(r'addCoins', player_content, re.IGNORECASE): method_count += 1
+    if re.search(r'addDistance', player_content, re.IGNORECASE): method_count += 1
+    if re.search(r'updateHighScore', player_content, re.IGNORECASE): method_count += 1
+    if re.search(r'showDetail', player_content, re.IGNORECASE): method_count += 1
+    if method_count >= 3: instruksi_terpenuhi += 1
+    if instruksi_terpenuhi >= 3:
+        total_score += 5
+        details.append("[+] Bonus effort: Sudah mengerjakan mayoritas instruksi, tetap semangat! (+5)")
 
     # 4. Logika Method (30%)
     m_score = 0
-    # updateHighScore: if (new > old) OR Math.max
-    # Updated regex to allow 'this.field' (dots in variable names)
-    if re.search(r'if\s*\(\s*[\w\.]+\s*>\s*[\w\.]+\s*\)', player_content) or "Math.max" in player_content:
+    # updateHighScore: lenient, accept assignment to highScore
+    if re.search(r'highScore\s*=\s*\w+', player_content, re.IGNORECASE):
         m_score += 10
-        details.append("[OK] updateHighScore logic found (+10)")
+        details.append("[OK] updateHighScore sudah ada. (+10)")
+        if not re.search(r'if\s*\(\s*\w+\s*>\s*highScore', player_content):
+            details.append("[~] Saran: Tambahkan pengecekan 'if (newScore > highScore)' agar hanya update jika skor baru lebih tinggi.")
     else:
-        details.append("[X] updateHighScore logic missing")
+        details.append("[~] updateHighScore belum ditemukan. Pastikan ada logika update hanya jika skor baru lebih tinggi dari highScore.")
 
     # addCoins: += OR = ... + ...
-    if ("+=" in player_content or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and "addCoins" in player_content:
+    if (re.search(r'\+=', player_content) or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and re.search(r'addCoins', player_content, re.IGNORECASE):
         m_score += 5
-        details.append("[OK] addCoins logic found (+5)")
+        details.append("[OK] addCoins sudah benar menambah koin. (+5)")
     else:
-        details.append("[X] addCoins logic missing")
+        details.append("[~] addCoins belum ditemukan atau belum menambah koin dengan benar. Pastikan menggunakan '+=' atau penjumlahan.")
 
     # addDistance: += OR = ... + ...
-    if ("+=" in player_content or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and "addDistance" in player_content:
+    if (re.search(r'\+=', player_content) or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and re.search(r'addDistance', player_content, re.IGNORECASE):
         m_score += 5
-        details.append("[OK] addDistance logic found (+5)")
+        details.append("[OK] addDistance sudah benar menambah jarak. (+5)")
     else:
-        details.append("[X] addDistance logic missing")
+        details.append("[~] addDistance belum ditemukan atau belum menambah jarak dengan benar. Pastikan menggunakan '+=' atau penjumlahan.")
 
-    # showDetail
-    if "System.out.println" in player_content and "showDetail" in player_content:
-        m_score += 10
-        details.append("[OK] showDetail implementation found (+10)")
+    # showDetail (case-insensitive)
+    if re.search(r'def\s+showdetail|void\s+showdetail', player_content, re.IGNORECASE) or re.search(r'void\s+ShowDetail', player_content):
+        if re.search(r'System\.out\.println', player_content):
+            m_score += 10
+            details.append("[OK] showDetail implementation found (+10)")
+        else:
+            details.append("[X] showDetail method found but no output")
     else:
         details.append("[X] showDetail implementation missing")
 
@@ -252,6 +290,8 @@ def grade_student(student_path):
         print(line)
     print("-" * 40)
     print(f"TOTAL SCORE: {total_score:.2f} / 100")
+    if total_score >= 60:
+        print("Catatan: Sudah mengerjakan sebagian besar instruksi, tinggal lengkapi beberapa bagian agar lebih sempurna!")
     print("="*40 + "\n")
 
     return total_score
