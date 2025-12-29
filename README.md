@@ -43,13 +43,18 @@ Sistem penilaian saat ini menggunakan analisis statis (memeriksa kode sumber) un
 
 1.  Pastikan Python terinstall.
 2.  Jalankan script `grade.py` dari terminal:
+
     ```bash
     python grade.py <path_to_student_folders>
     ```
+
     Contoh jika folder mahasiswa ada di folder luar:
+
     ```bash
     python grade.py ..
     ```
+
+    ![picture 0](https://i.imgur.com/51grB20.png)
 
 ## Catatan
 
