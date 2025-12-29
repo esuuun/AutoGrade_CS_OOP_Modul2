@@ -189,7 +189,8 @@ def grade_student(student_path):
     # 4. Logika Method (30%)
     m_score = 0
     # updateHighScore: if (new > old) OR Math.max
-    if re.search(r'if\s*\(\s*\w+\s*>\s*\w+\s*\)', player_content) or "Math.max" in player_content:
+    # Updated regex to allow 'this.field' (dots in variable names)
+    if re.search(r'if\s*\(\s*[\w\.]+\s*>\s*[\w\.]+\s*\)', player_content) or "Math.max" in player_content:
         m_score += 10
         details.append("[OK] updateHighScore logic found (+10)")
     else:
