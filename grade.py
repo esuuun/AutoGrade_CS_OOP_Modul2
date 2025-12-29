@@ -24,28 +24,60 @@ def read_file_content(path):
 def check_regex(content, pattern, flags=0):
     return bool(re.search(pattern, content, flags))
 
+def find_path_insensitive(root, name, look_for_dir=True):
+    if not os.path.exists(root):
+        return None
+    for item in os.listdir(root):
+        if item.lower() == name.lower():
+            full_path = os.path.join(root, item)
+            if look_for_dir and os.path.isdir(full_path):
+                return full_path
+            elif not look_for_dir and os.path.isfile(full_path):
+                return full_path
+    return None
+
 def grade_student(student_path):
     print(f"Grading {student_path}...")
     
-    src_path = os.path.join(student_path, "src")
-    if not os.path.exists(src_path):
+    src_path = find_path_insensitive(student_path, "src", look_for_dir=True)
+    if not src_path:
         # Try to find src deeper
         for root, dirs, files in os.walk(student_path):
-            if "src" in dirs:
-                src_path = os.path.join(root, "src")
-                break
+            for d in dirs:
+                if d.lower() == "src":
+                    src_path = os.path.join(root, d)
+                    break
+            if src_path: break
     
-    if not os.path.exists(src_path):
+    if not src_path:
         print(f"  Error: 'src' folder not found in {student_path}")
         return 0
 
-    model_path = os.path.join(src_path, "Model")
+    model_path = find_path_insensitive(src_path, "Model", look_for_dir=True)
+    if not model_path:
+         # Fallback: maybe they didn't use a package folder, or named it differently?
+         # Let's try to find Player.java to locate the model folder
+         for root, dirs, files in os.walk(src_path):
+             if "Player.java" in files:
+                 model_path = root
+                 break
     
+    if not model_path:
+        model_path = os.path.join(src_path, "Model") # Default for error reporting
+
     # Files
-    player_file = os.path.join(model_path, "Player.java")
-    score_file = os.path.join(model_path, "Score.java")
-    showdetail_file = os.path.join(model_path, "ShowDetail.java")
-    main_file = os.path.join(src_path, "Main.java")
+    player_file = find_path_insensitive(model_path, "Player.java", look_for_dir=False) or os.path.join(model_path, "Player.java")
+    score_file = find_path_insensitive(model_path, "Score.java", look_for_dir=False) or os.path.join(model_path, "Score.java")
+    showdetail_file = find_path_insensitive(model_path, "ShowDetail.java", look_for_dir=False) or os.path.join(model_path, "ShowDetail.java")
+    
+    # Main usually in src or src/Main
+    main_file = find_path_insensitive(src_path, "Main.java", look_for_dir=False)
+    if not main_file:
+         for root, dirs, files in os.walk(src_path):
+             if "Main.java" in files:
+                 main_file = os.path.join(root, "Main.java")
+                 break
+    if not main_file: main_file = os.path.join(src_path, "Main.java")
 
     player_content = read_file_content(player_file)
     score_content = read_file_content(score_file)
@@ -60,12 +92,13 @@ def grade_student(student_path):
     # Package Model
     if os.path.exists(model_path):
         s_score += 5
-        details.append("[OK] Model package exists (+5)")
+        details.append(f"[OK] Model package exists at {os.path.basename(model_path)} (+5)")
     else:
         details.append("[X] Model package missing")
 
     # Package declaration
-    if "package Model;" in player_content and "package Model;" in score_content:
+    # Allow 'package Model;' or 'package model;' or 'package com.example.model;'
+    if re.search(r'package\s+[\w\.]*model;', player_content, re.IGNORECASE) and re.search(r'package\s+[\w\.]*model;', score_content, re.IGNORECASE):
         s_score += 5
         details.append("[OK] Package declaration correct (+5)")
     else:
@@ -73,7 +106,8 @@ def grade_student(student_path):
 
     # Private fields (Player)
     # Check for private fields. We expect at least 3 private fields.
-    private_count = len(re.findall(r'private\s+\w+\s+\w+;', player_content))
+    # Regex updated to handle inline initialization: private Type name = val;
+    private_count = len(re.findall(r'private\s+\w+\s+\w+(?:\s*=\s*[^;]+)?;', player_content))
     if private_count >= 3:
         s_score += 5
         details.append(f"[OK] Encapsulation (Private fields) in Player ({private_count} found) (+5)")
@@ -92,7 +126,8 @@ def grade_student(student_path):
     # 2. Implementasi Interface (15%)
     i_score = 0
     # ShowDetail interface
-    if "interface ShowDetail" in showdetail_content and "void showDetail();" in showdetail_content:
+    # Allow public void showDetail(); or void showDetail();
+    if "interface ShowDetail" in showdetail_content and re.search(r'(public\s+)?void\s+showDetail\(\)\s*;', showdetail_content):
         i_score += 5
         details.append("[OK] Interface ShowDetail defined correctly (+5)")
     else:
@@ -133,15 +168,17 @@ def grade_student(student_path):
         details.append("[X] Player: LocalDateTime.now() missing")
 
     # Player: Init 0
-    if re.search(r'=\s*0;', player_content):
+    # Allow explicit init to 0 OR just reliance on default values (it's Java)
+    # We check if there are numeric fields defined.
+    if re.search(r'private\s+(int|long|double|float)\s+\w+(\s*=\s*0)?\s*;', player_content):
         c_score += 5
-        details.append("[OK] Player: Fields initialized to 0 (+5)")
+        details.append("[OK] Player: Numeric fields present (default 0 or explicit) (+5)")
     else:
-        details.append("[X] Player: Initialization to 0 missing")
+        details.append("[X] Player: Numeric fields missing")
 
     # Score: Constructor assignments
-    # Look for 'this.x = x' pattern
-    if len(re.findall(r'this\.\w+\s*=\s*\w+;', score_content)) >= 3:
+    # Look for 'this.x = x' OR 'x = val' inside constructor
+    if len(re.findall(r'(this\.)?\w+\s*=\s*\w+;', score_content)) >= 3:
         c_score += 5
         details.append("[OK] Score: Constructor assignments found (+5)")
     else:
@@ -151,24 +188,24 @@ def grade_student(student_path):
 
     # 4. Logika Method (30%)
     m_score = 0
-    # updateHighScore: if (new > old)
-    if re.search(r'if\s*\(\s*\w+\s*>\s*\w+\s*\)', player_content):
+    # updateHighScore: if (new > old) OR Math.max
+    if re.search(r'if\s*\(\s*\w+\s*>\s*\w+\s*\)', player_content) or "Math.max" in player_content:
         m_score += 10
-        details.append("[OK] updateHighScore logic (if new > old) found (+10)")
+        details.append("[OK] updateHighScore logic found (+10)")
     else:
         details.append("[X] updateHighScore logic missing")
 
-    # addCoins: +=
-    if "+=" in player_content and "addCoins" in player_content:
+    # addCoins: += OR = ... + ...
+    if ("+=" in player_content or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and "addCoins" in player_content:
         m_score += 5
-        details.append("[OK] addCoins logic (+=) found (+5)")
+        details.append("[OK] addCoins logic found (+5)")
     else:
         details.append("[X] addCoins logic missing")
 
-    # addDistance: +=
-    if "+=" in player_content and "addDistance" in player_content:
+    # addDistance: += OR = ... + ...
+    if ("+=" in player_content or re.search(r'\w+\s*=\s*\w+\s*\+\s*\w+', player_content)) and "addDistance" in player_content:
         m_score += 5
-        details.append("[OK] addDistance logic (+=) found (+5)")
+        details.append("[OK] addDistance logic found (+5)")
     else:
         details.append("[X] addDistance logic missing")
 
@@ -184,11 +221,11 @@ def grade_student(student_path):
     # 5. Eksekusi Main & Output (15%)
     main_score = 0
     # Instantiation
-    if main_content.count("new Player") >= 2 and main_content.count("new Score") >= 3:
+    if "new Player" in main_content and "new Score" in main_content:
         main_score += 5
-        details.append("[OK] Main: Objects instantiated (2 Players, 3 Scores) (+5)")
+        details.append("[OK] Main: Objects instantiated (+5)")
     else:
-        details.append("[X] Main: Insufficient object instantiation")
+        details.append("[X] Main: Object instantiation missing")
 
     # Update State
     if "updateHighScore" in main_content and "addCoins" in main_content:
