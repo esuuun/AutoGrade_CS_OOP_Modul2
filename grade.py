@@ -223,6 +223,18 @@ def main():
     if len(sys.argv) > 1:
         root_dir = sys.argv[1]
 
+    if not os.path.exists(root_dir):
+        print(f"Error: The specified path does not exist: {root_dir}")
+        return
+
+    # Check if the root_dir itself is a student project (contains src)
+    if os.path.isdir(os.path.join(root_dir, "src")):
+        print(f"Detected single student project at {root_dir}")
+        score = grade_student(root_dir)
+        print("\nFinal Scores Summary:")
+        print(f"{os.path.basename(root_dir)}: {score:.2f}")
+        return
+
     students = find_student_folders(root_dir)
     print(f"Found {len(students)} student folders.")
     
