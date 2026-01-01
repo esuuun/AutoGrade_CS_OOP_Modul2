@@ -47,21 +47,22 @@ def grade_student(student_path):
                 if d.lower() == "src":
                     src_path = os.path.join(root, d)
                     break
-            if src_path: break
-    
+            if src_path:
+                break
+
+    # If still not found, allow grading from root (no src)
     if not src_path:
-        print(f"  Error: 'src' folder not found in {student_path}")
-        return 0
+        src_path = student_path
 
     model_path = find_path_insensitive(src_path, "Model", look_for_dir=True)
     if not model_path:
-         # Fallback: maybe they didn't use a package folder, or named it differently?
-         # Let's try to find Player.java to locate the model folder
-         for root, dirs, files in os.walk(src_path):
-             if "Player.java" in files:
-                 model_path = root
-                 break
-    
+        # Fallback: maybe they didn't use a package folder, or named it differently?
+        # Let's try to find Player.java to locate the model folder
+        for root, dirs, files in os.walk(src_path):
+            if "Player.java" in files:
+                model_path = root
+                break
+
     if not model_path:
         model_path = os.path.join(src_path, "Model") # Default for error reporting
 
@@ -73,11 +74,21 @@ def grade_student(student_path):
     # Main usually in src or src/Main
     main_file = find_path_insensitive(src_path, "Main.java", look_for_dir=False)
     if not main_file:
-         for root, dirs, files in os.walk(src_path):
-             if "Main.java" in files:
-                 main_file = os.path.join(root, "Main.java")
-                 break
-    if not main_file: main_file = os.path.join(src_path, "Main.java")
+        for root, dirs, files in os.walk(src_path):
+            if "Main.java" in files:
+                main_file = os.path.join(root, "Main.java")
+                break
+    # If still not found, try parent of src_path (for cases like grading Model/ directly)
+    if not main_file:
+        parent_path = os.path.dirname(src_path)
+        main_file = find_path_insensitive(parent_path, "Main.java", look_for_dir=False)
+        if not main_file:
+            for root, dirs, files in os.walk(parent_path):
+                if "Main.java" in files:
+                    main_file = os.path.join(root, "Main.java")
+                    break
+    if not main_file:
+        main_file = os.path.join(src_path, "Main.java")
 
     player_content = read_file_content(player_file)
     score_content = read_file_content(score_file)
@@ -137,7 +148,9 @@ def grade_student(student_path):
         details.append("[~] Interface ShowDetail belum ditemukan. Coba pastikan nama dan deklarasi sudah benar.")
 
     # Implements (partial credit)
-    if re.search(r'implements\s+ShowDetail', player_content, re.IGNORECASE):
+    # More robust: allow implements ... ShowDetail with any whitespace/comments/newlines in between
+    implements_showdetail_pattern = r'implements[\s\S]{0,100}?ShowDetail'
+    if re.search(implements_showdetail_pattern, player_content, re.IGNORECASE):
         i_score += 5
         details.append("[OK] Player sudah mengimplementasikan ShowDetail. Bagus! (+5)")
     elif re.search(r'implements', player_content, re.IGNORECASE):
@@ -146,7 +159,7 @@ def grade_student(student_path):
     else:
         details.append("[~] Player belum mengimplementasikan ShowDetail. Coba pastikan deklarasi: 'implements ShowDetail'.")
 
-    if re.search(r'implements\s+ShowDetail', score_content, re.IGNORECASE):
+    if re.search(implements_showdetail_pattern, score_content, re.IGNORECASE):
         i_score += 5
         details.append("[OK] Score sudah mengimplementasikan ShowDetail. (+5)")
     elif re.search(r'implements', score_content, re.IGNORECASE):
@@ -274,7 +287,8 @@ def grade_student(student_path):
         details.append("[X] Main: State updates missing")
 
     # Final Output
-    if "showDetail" in main_content:
+    # Accept both showDetail() and ShowDetail() calls, case-insensitive
+    if re.search(r'\bshowDetail\s*\(', main_content, re.IGNORECASE):
         main_score += 5
         details.append("[OK] Main: showDetail called (+5)")
     else:
